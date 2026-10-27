@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>My Song, My Story</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
+<style>
+/* Layout: 레코드 슬리브 — 활동 소개 → 턴테이블 + 트랙리스트 → 우리 반 플레이리스트(발표 기록) */
+:root{
+  --bg:#EDF0F5; --surface:#FFFFFF; --ink:#1A2030; --muted:#5C6478; --line:#D5DAE4;
+  --vinyl:#1C2130; --groove:#2A3044; --label:#F2B705; --label-ink:#1A2030;
+  --accent:#2F55C8; --on-accent:#FFFFFF; --today:#E8F0FF;
+  --ok:#1F8A4C; --ok-bg:#E4F4EA; --warn:#B4541A; --warn-bg:#FBEBDD;
+  --f-display:"Black Han Sans","IBM Plex Sans KR",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans KR",system-ui,-apple-system,"Malgun Gothic",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#111520; --surface:#1A1F2C; --ink:#E9ECF3; --muted:#9AA2B6; --line:#2C3344;
+  --vinyl:#090B11; --groove:#1D2230; --accent:#8AA6FF; --on-accent:#0F1424; --today:#1F2A45;
+  --ok:#5FD08F; --ok-bg:#16301F; --warn:#F2A06A; --warn-bg:#3A2416; color-scheme:dark}}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:calc(32px + env(safe-area-inset-top,0px)) calc(56px + env(safe-area-inset-bottom,0px))}
+[hidden]{display:none!important}
+.wrap{max-width:1100px;margin:0 auto;display:grid;gap:44px}
+h1,h2,h3{text-wrap:balance;margin:0}
+.eyebrow{font-family:var(--f-mono);font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.sec-title{font-family:var(--f-display);font-weight:400;font-size:clamp(28px,4vw,40px)}
+
+.hero{display:grid;gap:14px}
+.hero h1{font-family:var(--f-display);font-weight:400;font-size:clamp(40px,7vw,76px);line-height:1.05}
+.hero h1 span{display:block;font-size:.5em;color:var(--muted);margin-top:6px}
+.hero p{margin:0;max-width:62ch;font-size:18px}
+.facts{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+.fact{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 14px;font-size:15px}
+
+.intro{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px;display:grid;gap:14px;align-content:start;min-width:0}
+.panel h2{font-size:22px;font-weight:700}
+.panel ol,.panel ul{margin:0;padding:0;list-style:none;display:grid;gap:12px}
+.panel li{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:baseline}
+.k{font-family:var(--f-mono);font-size:13px;font-weight:600;color:var(--accent);min-width:2.2em}
+.panel li strong{display:block}
+.panel li em{font-style:normal;color:var(--muted);font-size:15px}
+.note{font-size:14px;color:var(--muted);border-top:1px dashed var(--line);padding-top:12px;margin:0}
+
+.banner{background:var(--warn-bg);color:var(--warn);border-radius:10px;padding:12px 16px;font-size:15px}
+
+.draw{display:grid;gap:20px}
+.draw-head{display:flex;flex-wrap:wrap;gap:12px;align-items:end;justify-content:space-between}
+.teacher{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:14px}
+.badge{background:var(--label);color:var(--label-ink);border-radius:999px;padding:4px 12px;font-weight:700}
+.stage{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:28px;align-items:start}
+.deck{display:grid;gap:16px;justify-items:center;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px}
+.record{width:min(300px,100%);max-width:100%;aspect-ratio:1;border-radius:50%;position:relative;
+  background:radial-gradient(circle,transparent 0 34%,rgba(255,255,255,.05) 34.5% 35%,transparent 35.5%),
+    repeating-radial-gradient(circle,var(--vinyl) 0 2px,var(--groove) 2px 3px);
+  box-shadow:0 10px 30px rgba(10,14,25,.25)}
+.record::after{content:"";position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(from 30deg,transparent 0 10%,rgba(255,255,255,.08) 14%,transparent 20% 60%,rgba(255,255,255,.06) 64%,transparent 70%)}
+.label{position:absolute;inset:31%;border-radius:50%;background:var(--label);color:var(--label-ink);display:grid;place-items:center;text-align:center;z-index:1}
+.label small{display:block;font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;font-weight:600}
+.label b{display:block;font-family:var(--f-display);font-weight:400;font-size:clamp(34px,8vw,52px);line-height:1}
+.record.spin{animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.now{text-align:center;display:grid;gap:2px}
+.now .when{font-family:var(--f-mono);font-size:15px;color:var(--muted)}
+.now .who{font-size:22px;font-weight:700}
+.now .song{font-size:15px;color:var(--muted)}
+.controls,.confirm{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;text-align:center}
+.lock{font-size:14px;color:var(--muted);text-align:center;margin:0}
+.msg{font-size:14px;margin:0;min-height:1.2em;text-align:center}
+.msg.err{color:var(--warn)} .msg.ok{color:var(--ok)}
+
+button{font:inherit;cursor:pointer;border-radius:10px;padding:10px 18px;font-weight:700;border:1px solid transparent}
+.btn-main{background:var(--accent);color:var(--on-accent);font-size:18px;padding:14px 28px}
+.btn-sub{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn-sm{padding:6px 12px;font-size:14px}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible,input:focus-visible{outline:3px solid var(--label);outline-offset:2px}
+input[type=text],input[type=password]{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%;min-width:0}
+.pin{width:7em!important}
+
+.tracks{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.track{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-variant-numeric:tabular-nums}
+.track .no{font-family:var(--f-mono);font-size:13px;font-weight:600;color:var(--muted)}
+.track .d{font-family:var(--f-mono);font-size:14px;white-space:nowrap}
+.track .s{font-weight:700;font-size:17px;text-align:right;white-space:nowrap}
+.track .s.empty{color:var(--line)}
+.track.first{box-shadow:inset 4px 0 0 var(--label);border-color:var(--label)}
+.track.is-today{background:var(--today)}
+.track.done .s::after{content:" ✓";color:var(--ok);font-size:15px}
+.track.pop{animation:pop .35s ease-out both}
+@keyframes pop{from{transform:translateY(6px);opacity:.2}to{transform:none;opacity:1}}
+.legend{font-size:14px;color:var(--muted);margin:0}
+
+/* Playlist log */
+.log{display:grid;gap:16px}
+.log-head{display:flex;flex-wrap:wrap;gap:12px;align-items:end;justify-content:space-between}
+.progress{font-family:var(--f-mono);font-size:15px;color:var(--muted);font-variant-numeric:tabular-nums}
+.cal{display:grid;gap:8px}
+.cal-head,.week{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.cal-head div{font-family:var(--f-mono);font-size:13px;font-weight:600;color:var(--muted);text-align:center;letter-spacing:.08em}
+.day,.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:6px;align-content:start;min-width:0}
+.day{min-height:168px}
+.day.blank{background:transparent;border-style:dashed}
+.day.is-today{background:var(--today);border-color:var(--accent);box-shadow:inset 0 3px 0 var(--accent)}
+.day .top{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+.day .date{font-family:var(--f-mono);font-weight:600;font-size:15px;font-variant-numeric:tabular-nums}
+.day .date small{color:var(--muted);font-size:12px;margin-left:4px;display:none}
+.day .tno{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.who{font-weight:700;font-size:17px;line-height:1.3}
+.who .n{font-family:var(--f-mono);font-size:20px;font-weight:700;color:var(--accent)}
+.song{min-width:0}
+.song strong{display:block;font-size:14px;line-height:1.35;overflow-wrap:anywhere}
+.song span{display:block;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.song .none{color:var(--muted);font-size:13px}
+.day .empty{margin:0;color:var(--muted);font-size:13px}
+.day .acts,.card .acts{display:flex;flex-wrap:wrap;gap:6px;justify-content:start}
+.roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.sub-title{font-size:18px;font-weight:700}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);padding:22px;width:min(420px,calc(100% - 32px))}
+dialog::backdrop{background:rgba(10,14,25,.5)}
+dialog form{display:grid;gap:12px}
+dialog h3{font-size:20px}
+dialog label{display:grid;gap:4px;font-size:14px;color:var(--muted)}
+dialog .msg{text-align:left}
+.dlg-btns{display:flex;gap:8px;justify-content:end}
+.pill{font-size:12px;font-weight:700;border-radius:999px;padding:2px 10px;white-space:nowrap;justify-self:start}
+.pill.done{background:var(--ok-bg);color:var(--ok)}
+.pill.today{background:var(--label);color:var(--label-ink)}
+.pill.missed{background:var(--warn-bg);color:var(--warn)}
+.pill.wait{background:var(--bg);color:var(--muted)}
+.btn-done{background:var(--bg);color:var(--ink);border-color:var(--line)}
+.btn-done[aria-pressed="true"]{background:var(--ok);color:var(--surface);border-color:var(--ok)}
+
+@media (max-width:820px){
+  .intro,.stage{grid-template-columns:1fr}
+  .cal-head{display:none}
+  .week{grid-template-columns:1fr}
+  .day.blank{display:none}
+  .day{min-height:0}
+  .day .date small{display:inline}
+}
+@media (prefers-reduced-motion:reduce){.record.spin,.track.pop{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <div class="eyebrow">Morning Track · 아침 조회 활동</div>
+    <h1>My Song, My Story<span>오늘의 한 곡, 나만의 이야기</span></h1>
+    <p>매일 아침 한 명씩, 내가 좋아하는 노래 한 곡을 친구들에게 소개해요. 노래를 함께 듣고, 이 노래를 왜 좋아하게 되었는지 그 뒤에 숨은 이야기를 들려주세요. 마지막 발표가 끝나면 우리 반만의 플레이리스트가 완성됩니다.</p>
+    <div class="facts">
+      <span class="fact"><b>시작</b> 11월 9일(월)</span>
+      <span class="fact"><b>방식</b> 매일 아침 1명</span>
+      <span class="fact"><b>요일</b> 월–금 (주말 제외)</span>
+      <span class="fact"><b>트랙</b> <span id="factCount">27</span>곡</span>
+    </div>
+  </header>
+
+  <section class="intro" aria-label="활동 안내">
+    <div class="panel">
+      <h2>발표 준비 가이드</h2>
+      <ol>
+        <li><span class="k">Q1</span><div><strong>곡 소개</strong><em>곡 제목과 가수, 언제 나온 노래인지</em></div></li>
+        <li><span class="k">Q2</span><div><strong>처음 만난 순간</strong><em>이 노래를 처음 들은 곳, 그때의 나</em></div></li>
+        <li><span class="k">Q3</span><div><strong>나의 최애 구간</strong><em>가장 좋아하는 부분과 그 이유</em></div></li>
+        <li><span class="k">Q4</span><div><strong>비하인드 스토리</strong><em>이 노래와 연결된 기억이나 사람</em></div></li>
+        <li><span class="k">Q5</span><div><strong>추천 타이밍</strong><em>친구들이 언제 들으면 좋을지</em></div></li>
+      </ol>
+      <p class="note">노래는 바로 틀 수 있게 미리 찾아 두고, 가사가 교실에서 함께 듣기 괜찮은 곡으로 골라 주세요. 고른 노래는 아래 플레이리스트의 내 번호 칸에 입력해요.</p>
+    </div>
+    <div class="panel">
+      <h2>듣는 사람 약속</h2>
+      <ul>
+        <li><span class="k">01</span><div><strong>끝까지 귀 기울이기</strong><em>노래와 이야기가 끝날 때까지 집중해요</em></div></li>
+        <li><span class="k">02</span><div><strong>취향 존중하기</strong><em>내 취향이 아니어도 놀리거나 평가하지 않아요</em></div></li>
+        <li><span class="k">03</span><div><strong>박수와 한마디</strong><em>발표가 끝나면 박수와 함께 따뜻한 반응을 건네요</em></div></li>
+        <li><span class="k">04</span><div><strong>질문 하나</strong><em>궁금한 점이 있으면 하나씩 물어봐요</em></div></li>
+      </ul>
+      <p class="note">오늘의 발표자는 우리 반의 DJ예요. 모두가 좋은 청중이 되어 주세요.</p>
+    </div>
+  </section>
+
+  <section class="draw" aria-labelledby="draw-title">
+    <div class="banner" id="banner" hidden></div>
+    <div class="draw-head">
+      <div>
+        <div class="eyebrow">Tracklist Draw</div>
+        <h2 class="sec-title" id="draw-title">누가 Track 01일까?</h2>
+      </div>
+      <div class="teacher" id="teacherBox">
+        <button class="btn-sub btn-sm" id="teacherBtn" type="button">선생님 모드</button>
+        <form id="pinForm" class="teacher" hidden>
+          <label for="pinInput" class="lock">비밀번호</label>
+          <input class="pin" id="pinInput" type="password" inputmode="numeric" autocomplete="off">
+          <button class="btn-sub btn-sm" type="submit">확인</button>
+          <button class="btn-sub btn-sm" id="pinCancel" type="button">취소</button>
+        </form>
+        <span id="teacherOn" hidden><span class="badge">선생님 모드</span> <button class="btn-sub btn-sm" id="logoutBtn" type="button">나가기</button></span>
+        <p class="msg err" id="pinMsg"></p>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="deck">
+        <div class="record" id="record" aria-hidden="true">
+          <div class="label"><div><small id="labelTop">TRACK 01</small><b id="labelNum">?</b></div></div>
+        </div>
+        <div class="now" aria-live="polite">
+          <div class="when" id="nowWhen">11.9 (월) 첫 발표</div>
+          <div class="who" id="nowWho">아직 순서를 뽑지 않았어요</div>
+          <div class="song" id="nowSong"></div>
+        </div>
+        <div class="controls" id="controls" hidden>
+          <button class="btn-main" id="drawBtn" type="button">순서 뽑기</button>
+        </div>
+        <div class="confirm" id="confirm" hidden>
+          <span>순서와 완료 체크가 모두 초기화돼요. 다시 뽑을까요?</span>
+          <button class="btn-sub" id="yesBtn" type="button">다시 뽑기</button>
+          <button class="btn-sub" id="noBtn" type="button">취소</button>
+        </div>
+        <p class="lock" id="lockNote">순서 뽑기는 선생님만 할 수 있어요</p>
+        <p class="msg" id="deckMsg"></p>
+      </div>
+      <div style="display:grid;gap:10px;min-width:0">
+        <ol class="tracks" id="tracks"></ol>
+        <p class="legend">노란 테두리는 첫 발표자, 파란 칸은 오늘, ✓는 발표를 마친 친구예요.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="log" aria-labelledby="log-title">
+    <div class="log-head">
+      <div>
+        <div class="eyebrow">Class Playlist</div>
+        <h2 class="sec-title" id="log-title">우리 반 플레이리스트</h2>
+      </div>
+      <div class="progress" id="progress"></div>
+    </div>
+    <p class="legend">내 칸의 <b>노래 입력</b>을 누르고, 학번 다섯 자리를 넣은 뒤 노래 제목과 가수를 저장하세요. 발표 날 전까지 언제든 고칠 수 있어요.</p>
+    <p class="banner" id="calNote" hidden>아직 발표 순서를 뽑지 않았어요. 순서를 뽑으면 달력에 이름이 채워져요. 그 전에도 아래 명단에서 노래를 미리 입력할 수 있어요.</p>
+    <div class="cal" id="cal"></div>
+    <div id="rosterWrap" hidden style="display:grid;gap:10px">
+      <h3 class="sub-title">번호순 명단</h3>
+      <div class="roster" id="roster"></div>
+    </div>
+  </section>
+</div>
+
+<dialog id="editDlg" aria-labelledby="editTitle">
+  <form id="editForm">
+    <h3 id="editTitle">노래 입력</h3>
+    <label for="codeIn">학번 다섯 자리<input id="codeIn" type="password" inputmode="numeric" autocomplete="off" maxlength="8"></label>
+    <label for="titleIn">노래 제목<input id="titleIn" type="text" maxlength="80"></label>
+    <label for="artistIn">가수<input id="artistIn" type="text" maxlength="60"></label>
+    <p class="msg" id="editMsg"></p>
+    <div class="dlg-btns">
+      <button class="btn-sub" id="editCancel" type="button">취소</button>
+      <button class="btn-main btn-sm" id="editSave" type="submit">저장</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+/* ====== 여기에 Supabase 정보를 넣으세요 ====== */
+const SUPABASE_URL = "https://wzlsdeinbemzsbjttmnh.supabase.co";
+const SUPABASE_KEY = "sb_publishable_0xfAtQ-XtWJWFW6A4irZBw_tKkaJMxN"; // anon(publishable) 키만! service_role 키는 절대 넣지 마세요
+/* ============================================= */
+
+(function(){
+  const START = new Date(2026,10,9); // 2026-11-09 (월)
+  const DAYS = ["일","월","화","수","목","금","토"];
+  const $ = id => document.getElementById(id);
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const configured = !SUPABASE_URL.includes("YOUR-") && !SUPABASE_KEY.includes("YOUR-");
+
+  let sb = null, rows = [], teacherPin = null, busy = false;
+
+  /* ---------- helpers ---------- */
+  function weekdays(n){
+    const out=[], d=new Date(START);
+    while(out.length<n){ const w=d.getDay(); if(w!==0&&w!==6) out.push(new Date(d)); d.setDate(d.getDate()+1); }
+    return out;
+  }
+  const fmt = d => `${d.getMonth()+1}.${d.getDate()} (${DAYS[d.getDay()]})`;
+  const dayKey = d => d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate();
+  const pad = i => String(i).padStart(2,"0");
+  const el = (tag, cls, text) => { const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; };
+  const hasOrder = () => rows.some(r=>r.slot!=null);
+  const ordered = () => hasOrder() ? rows.filter(r=>r.slot!=null).sort((a,b)=>a.slot-b.slot) : null;
+  function setMsg(id, text, kind){ const m=$(id); m.textContent=text||""; m.className="msg"+(kind?" "+kind:""); }
+  function errText(error){
+    const m = (error && error.message) || "";
+    if(m.includes("wrong_pin")) return "선생님 비밀번호가 맞지 않아요.";
+    if(m.includes("wrong_code")) return "학번이 맞지 않아요. 내 번호의 학번 다섯 자리를 확인해 주세요.";
+    return "저장하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.";
+  }
+
+  /* ---------- render ---------- */
+  function todayIndex(dates){
+    const t = dayKey(new Date());
+    const i = dates.findIndex(d=>dayKey(d)===t);
+    if(i>=0) return i;
+    return t < dayKey(dates[0]) ? 0 : -1;
+  }
+
+  function renderDeck(){
+    const o = ordered();
+    $("controls").hidden = !teacherPin || busy || !$("confirm").hidden;
+    $("lockNote").hidden = !!teacherPin;
+    $("drawBtn").textContent = o ? "다시 뽑기" : "순서 뽑기";
+    if(busy) return;
+    const n = rows.length || 27, dates = weekdays(n);
+    if(!o){
+      $("labelTop").textContent="TRACK 01"; $("labelNum").textContent="?";
+      $("nowWhen").textContent = fmt(dates[0])+" 첫 발표";
+      $("nowWho").textContent = "아직 순서를 뽑지 않았어요";
+      $("nowSong").textContent = "";
+      return;
+    }
+    let i = todayIndex(dates);
+    if(i<0){ i = o.findIndex(r=>!r.done); if(i<0) i = o.length-1; }
+    const r = o[i];
+    $("labelTop").textContent = "TRACK "+pad(i+1);
+    $("labelNum").textContent = r.student_no;
+    $("nowWhen").textContent = fmt(dates[i]) + (i===0 && dayKey(new Date())<=dayKey(dates[0]) ? " 첫 발표" : " 오늘의 DJ");
+    $("nowWho").textContent = `${r.student_no}번` + (r.done?" · 발표 완료":"");
+    $("nowSong").textContent = r.song_title ? `${r.song_title}${r.artist?" — "+r.artist:""}` : "";
+  }
+
+  function renderGrid(animate){
+    const o = ordered(), n = rows.length || 27, dates = weekdays(n), t = dayKey(new Date());
+    const ul = $("tracks"); ul.innerHTML="";
+    dates.forEach((d,i)=>{
+      const r = o ? o[i] : null;
+      const li = el("li","track"+(r&&i===0?" first":"")+(dayKey(d)===t?" is-today":"")+(r&&r.done?" done":""));
+      li.append(el("span","no",pad(i+1)), el("span","d",fmt(d)), el("span", r?"s":"s empty", r? `${r.student_no}번` : "?"));
+      if(animate){ li.classList.add("pop"); li.style.animationDelay=(i*40)+"ms"; }
+      ul.appendChild(li);
+    });
+    $("factCount").textContent = n;
+  }
+
+  function songBlock(r){
+    const song = el("div","song");
+    if(r.song_title){ song.append(el("strong",null,r.song_title)); if(r.artist) song.append(el("span",null,r.artist)); }
+    else song.append(el("span","none","노래 입력 전"));
+    return song;
+  }
+  function statusPill(r, d, t){
+    if(r.done) return el("span","pill done","발표 완료");
+    if(!d) return el("span","pill wait","대기");
+    const k = dayKey(d);
+    if(k===t) return el("span","pill today","오늘");
+    if(k<t) return el("span","pill missed","미발표");
+    return el("span","pill wait","예정");
+  }
+  function actions(r, o){
+    const acts = el("div","acts");
+    const eb = el("button","btn-sub btn-sm","노래 입력"); eb.type="button";
+    eb.addEventListener("click",()=>openEdit(r));
+    acts.append(eb);
+    if(teacherPin && o){
+      const db = el("button","btn-done btn-sm", r.done?"완료됨":"완료 체크"); db.type="button";
+      db.setAttribute("aria-pressed", r.done?"true":"false");
+      db.addEventListener("click",()=>toggleDone(r,db));
+      acts.append(db);
+    }
+    return acts;
+  }
+
+  function renderLog(){
+    const o = ordered(), n = rows.length || 27, dates = weekdays(n), t = dayKey(new Date());
+    $("calNote").hidden = !!o;
+    $("rosterWrap").hidden = !!o;
+    const cal = $("cal"); cal.innerHTML="";
+    const head = el("div","cal-head");
+    ["월","화","수","목","금"].forEach(w=>head.append(el("div",null,w)));
+    cal.append(head);
+    for(let w=0; w*5<dates.length; w++){
+      const week = el("div","week");
+      for(let c=0;c<5;c++){
+        const i = w*5+c, d = dates[i];
+        if(!d){ week.append(el("div","day blank")); continue; }
+        const r = o ? o[i] : null;
+        const cell = el("div","day"+(dayKey(d)===t?" is-today":""));
+        const top = el("div","top");
+        const date = el("span","date", `${d.getMonth()+1}.${d.getDate()}`);
+        date.append(el("small",null,DAYS[d.getDay()]));
+        top.append(date, el("span","tno","TRACK "+pad(i+1)));
+        cell.append(top);
+        if(r){
+          const who = el("div","who"); who.append(el("span","n",r.student_no+"번"));
+          cell.append(who, songBlock(r), statusPill(r,d,t), actions(r,o));
+        } else {
+          cell.append(el("p","empty","순서를 뽑으면 발표자가 나타나요"));
+        }
+        week.append(cell);
+      }
+      cal.append(week);
+    }
+    // 번호순 명단 (순서 뽑기 전)
+    const ro = $("roster"); ro.innerHTML="";
+    if(!o){
+      rows.slice().sort((a,b)=>a.student_no-b.student_no).forEach(r=>{
+        const card = el("div","card");
+        const who = el("div","who"); who.append(el("span","n",r.student_no+"번"));
+        card.append(who, songBlock(r), actions(r,null));
+        ro.append(card);
+      });
+    }
+    const list = rows;
+    $("progress").textContent = `발표 ${list.filter(r=>r.done).length} / ${list.length} · 노래 입력 ${list.filter(r=>r.song_title).length} / ${list.length}`;
+  }
+
+  function render(animate){ renderDeck(); renderGrid(animate); renderLog(); }
+
+  /* ---------- song edit ---------- */
+  let editing = null;
+  function openEdit(r){
+    if(!sb){ setMsg("deckMsg","Supabase 연결 설정이 필요해요.","err"); return; }
+    editing = r;
+    $("editTitle").textContent = `${r.student_no}번 · 노래 입력`;
+    $("codeIn").value = ""; $("titleIn").value = r.song_title || ""; $("artistIn").value = r.artist || "";
+    setMsg("editMsg","");
+    $("editDlg").showModal();
+    $("codeIn").focus();
+  }
+  $("editCancel").addEventListener("click",()=>$("editDlg").close());
+  $("editForm").addEventListener("submit", async e=>{
+    e.preventDefault();
+    const r = editing; if(!r) return;
+    const code = $("codeIn").value.trim(), title = $("titleIn").value.trim(), artist = $("artistIn").value.trim();
+    if(!code){ setMsg("editMsg","학번을 입력해 주세요.","err"); return; }
+    if(!title){ setMsg("editMsg","노래 제목을 입력해 주세요.","err"); return; }
+    $("editSave").disabled = true; setMsg("editMsg","저장 중…");
+    const { error } = await sb.rpc("set_song",{ p_no:r.student_no, p_code:code, p_title:title, p_artist:artist });
+    $("editSave").disabled = false;
+    if(error){ setMsg("editMsg", errText(error), "err"); return; }
+    r.song_title = title; r.artist = artist || null;
+    $("editDlg").close(); render(false);
+  });
+
+  /* ---------- teacher ---------- */
+  $("teacherBtn").addEventListener("click",()=>{
+    if(!sb){ setMsg("pinMsg","Supabase 연결 설정이 필요해요.","err"); return; }
+    $("teacherBtn").hidden=true; $("pinForm").hidden=false; $("pinInput").value=""; $("pinInput").focus();
+  });
+  $("pinCancel").addEventListener("click",()=>{ $("pinForm").hidden=true; $("teacherBtn").hidden=false; setMsg("pinMsg",""); });
+  $("pinForm").addEventListener("submit", async e=>{
+    e.preventDefault();
+    const pin = $("pinInput").value.trim(); if(!pin) return;
+    setMsg("pinMsg","확인 중…");
+    const { data, error } = await sb.rpc("verify_teacher",{ p_pin:pin });
+    if(error || !data){ setMsg("pinMsg", error?errText(error):"비밀번호가 맞지 않아요.","err"); return; }
+    teacherPin = pin; setMsg("pinMsg","");
+    $("pinForm").hidden=true; $("teacherOn").hidden=false;
+    render(false);
+  });
+  $("logoutBtn").addEventListener("click",()=>{
+    teacherPin=null; $("teacherOn").hidden=true; $("teacherBtn").hidden=false; $("confirm").hidden=true; render(false);
+  });
+
+  async function toggleDone(r, btn){
+    btn.disabled=true;
+    const next = !r.done;
+    const { error } = await sb.rpc("set_done",{ p_pin:teacherPin, p_no:r.student_no, p_done:next });
+    btn.disabled=false;
+    if(error){ setMsg("deckMsg", errText(error), "err"); return; }
+    r.done = next; render(false);
+  }
+
+  /* ---------- draw ---------- */
+  $("drawBtn").addEventListener("click",()=>{
+    if(!teacherPin) return;
+    if(hasOrder()){ $("confirm").hidden=false; $("controls").hidden=true; $("yesBtn").focus(); }
+    else runDraw();
+  });
+  $("noBtn").addEventListener("click",()=>{ $("confirm").hidden=true; renderDeck(); });
+  $("yesBtn").addEventListener("click",()=>{ $("confirm").hidden=true; runDraw(); });
+
+  async function runDraw(){
+    if(busy) return;
+    busy=true; $("controls").hidden=true; setMsg("deckMsg","");
+    const n = rows.length || 27;
+    $("labelTop").textContent="TRACK 01"; $("nowWho").textContent="두구두구두구…"; $("nowSong").textContent="";
+    if(!reduce) $("record").classList.add("spin");
+    const t0 = performance.now(), dur = reduce ? 300 : 2600;
+    let stop=false;
+    (function flicker(){
+      if(stop) return;
+      $("labelNum").textContent = 1+Math.floor(Math.random()*n);
+      const t = Math.min(1,(performance.now()-t0)/dur);
+      setTimeout(flicker, 60 + Math.pow(t,3)*260);
+    })();
+    const { error } = await sb.rpc("draw_order",{ p_pin:teacherPin });
+    if(!error) await load(false);
+    const wait = Math.max(0, dur-(performance.now()-t0));
+    await new Promise(res=>setTimeout(res,wait));
+    stop=true; $("record").classList.remove("spin"); busy=false;
+    if(error){ setMsg("deckMsg", errText(error), "err"); render(false); return; }
+    render(true);
+    const first = ordered()[0];
+    $("labelTop").textContent="TRACK 01"; $("labelNum").textContent=first.student_no;
+    $("nowWhen").textContent = fmt(weekdays(1)[0])+" 첫 발표";
+    $("nowWho").textContent = `첫 번째 DJ는 ${first.student_no}번!`;
+  }
+
+  /* ---------- data ---------- */
+  async function load(doRender=true){
+    const { data, error } = await sb.from("students").select("student_no,slot,song_title,artist,done").order("student_no");
+    if(error){ showBanner("데이터를 불러오지 못했어요. Supabase 주소·키와 SQL 설정을 확인해 주세요."); return; }
+    $("banner").hidden=true;
+    rows = data || [];
+    if(doRender && !busy) render(false);
+  }
+  let reloadTimer=null;
+  function scheduleReload(){ clearTimeout(reloadTimer); reloadTimer=setTimeout(()=>{ if(!busy) load(); }, 400); }
+  function showBanner(t){ $("banner").textContent=t; $("banner").hidden=false; }
+
+  if(!configured || !window.supabase){
+    rows = Array.from({length:27},(_,i)=>({student_no:i+1,slot:null,song_title:null,artist:null,done:false}));
+    showBanner(!configured
+      ? "Supabase 연결 전이에요. 파일 아래쪽 SUPABASE_URL과 SUPABASE_KEY를 채워 주세요."
+      : "Supabase 라이브러리를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.");
+    render(false);
+    return;
+  }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  rows = Array.from({length:27},(_,i)=>({student_no:i+1,slot:null,song_title:null,artist:null,done:false}));
+  render(false);
+  load();
+  sb.channel("students-live")
+    .on("postgres_changes",{event:"*",schema:"public",table:"students"}, scheduleReload)
+    .subscribe();
+  setInterval(()=>{ if(!document.hidden) scheduleReload(); }, 60000);
+  document.addEventListener("visibilitychange",()=>{ if(!document.hidden) scheduleReload(); });
+})();
+</script>
+</body>
+</html>
