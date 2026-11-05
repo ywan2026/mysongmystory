@@ -271,14 +271,13 @@ dialog .msg{text-align:left}
 <script>
 /* ====== 여기에 Firebase 콘솔의 "웹 앱" 설정 값을 넣으세요 ====== */
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAFSy6VuBZO4RH-g8mlP_HUDkUoX7aGl8g",
-  authDomain: "mysongmystory-c5fa1.firebaseapp.com",
-  projectId: "mysongmystory-c5fa1",
-  storageBucket: "mysongmystory-c5fa1.firebasestorage.app",
-  messagingSenderId: "244774559862",
-  appId: "1:244774559862:web:cfe5c768f7a7400f637f57"
+  apiKey: "YOUR-API-KEY",
+  authDomain: "YOUR-PROJECT-ID.firebaseapp.com",
+  projectId: "YOUR-PROJECT-ID",
+  storageBucket: "YOUR-PROJECT-ID.appspot.com",
+  messagingSenderId: "YOUR-SENDER-ID",
+  appId: "YOUR-APP-ID",
 };
-
 /* ============================================= */
 
 (function(){
@@ -584,7 +583,7 @@ const FIREBASE_CONFIG = {
     if(creates.length) await Promise.all(creates);
   }
 
-  async function load(doRender=true){
+  async function load(doRender=true, attempt=0){
     try{
       let snap = await withTimeout(db.collection("students").orderBy("student_no").get());
       if(snap.size < STUDENT_COUNT){
@@ -594,6 +593,12 @@ const FIREBASE_CONFIG = {
       $("banner").hidden=true;
       rows = snap.docs.map(d=>d.data());
     }catch(error){
+      // 접속 직후 연결이 안정되기 전엔 첫 요청이 가끔 실패할 수 있어요.
+      // 바로 에러를 보여주지 않고 조용히 두 번 더 재시도해봐요.
+      if(attempt < 2){
+        await new Promise(res=>setTimeout(res, 1500));
+        return load(doRender, attempt+1);
+      }
       showBanner("데이터를 불러오지 못했어요. Firebase 설정과 Firestore 보안 규칙을 확인해 주세요.");
       return;
     }
