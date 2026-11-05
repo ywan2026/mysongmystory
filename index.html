@@ -621,8 +621,9 @@ const FIREBASE_CONFIG = {
   db = firebase.firestore();
   // 학교 와이파이 등 일부 네트워크에서 Firestore의 기본 실시간 연결 방식이
   // 막혀서 쓰기/읽기가 응답 없이 멈추는 경우가 있어요. 더 호환성 좋은
-  // long-polling 방식을 자동 감지해서 쓰도록 설정합니다.
-  db.settings({ experimentalAutoDetectLongPolling: true });
+  // 기본 연결 방식을 먼저 시도했다가 실패를 확인하고서야 전환하는
+  // "자동 감지" 대신, 처음부터 long-polling 방식만 쓰도록 강제합니다.
+  db.settings({ experimentalForceLongPolling: true });
 
   firebase.auth().onAuthStateChanged(user=>{
     isTeacher = !!user;
