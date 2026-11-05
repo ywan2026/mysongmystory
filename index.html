@@ -7,7 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <style>
 /* Layout: 레코드 슬리브 — 활동 소개 → 턴테이블 + 트랙리스트 → 우리 반 플레이리스트(발표 기록) */
 :root{
@@ -200,13 +202,7 @@ dialog .msg{text-align:left}
         <h2 class="sec-title" id="draw-title">누가 Track 01일까?</h2>
       </div>
       <div class="teacher" id="teacherBox">
-        <button class="btn-sub btn-sm" id="teacherBtn" type="button">선생님 모드</button>
-        <form id="pinForm" class="teacher" hidden>
-          <label for="pinInput" class="lock">비밀번호</label>
-          <input class="pin" id="pinInput" type="password" inputmode="numeric" autocomplete="off">
-          <button class="btn-sub btn-sm" type="submit">확인</button>
-          <button class="btn-sub btn-sm" id="pinCancel" type="button">취소</button>
-        </form>
+        <button class="btn-sub btn-sm" id="teacherBtn" type="button">Google로 선생님 로그인</button>
         <span id="teacherOn" hidden><span class="badge">선생님 모드</span> <button class="btn-sub btn-sm" id="logoutBtn" type="button">나가기</button></span>
         <p class="msg err" id="pinMsg"></p>
       </div>
@@ -273,9 +269,15 @@ dialog .msg{text-align:left}
 </dialog>
 
 <script>
-/* ====== 여기에 Supabase 정보를 넣으세요 ====== */
-const SUPABASE_URL = "https://wzlsdeinbemzsbjttmnh.supabase.co";
-const SUPABASE_KEY = "sb_publishable_0xfAtQ-XtWJWFW6A4irZBw_tKkaJMxN"; // anon(publishable) 키만! service_role 키는 절대 넣지 마세요
+/* ====== 여기에 Firebase 콘솔의 "웹 앱" 설정 값을 넣으세요 ====== */
+const firebaseConfig = {
+  apiKey: "AIzaSyAFSy6VuBZO4RH-g8mlP_HUDkUoX7aGl8g",
+  authDomain: "mysongmystory-c5fa1.firebaseapp.com",
+  projectId: "mysongmystory-c5fa1",
+  storageBucket: "mysongmystory-c5fa1.firebasestorage.app",
+  messagingSenderId: "244774559862",
+  appId: "1:244774559862:web:cfe5c768f7a7400f637f57"
+};
 /* ============================================= */
 
 (function(){
@@ -283,9 +285,10 @@ const SUPABASE_KEY = "sb_publishable_0xfAtQ-XtWJWFW6A4irZBw_tKkaJMxN"; // anon(p
   const DAYS = ["일","월","화","수","목","금","토"];
   const $ = id => document.getElementById(id);
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const configured = !SUPABASE_URL.includes("YOUR-") && !SUPABASE_KEY.includes("YOUR-");
+  const configured = !FIREBASE_CONFIG.apiKey.includes("YOUR-") && !FIREBASE_CONFIG.projectId.includes("YOUR-");
+  const STUDENT_COUNT = 27;
 
-  let sb = null, rows = [], teacherPin = null, busy = false;
+  let db = null, rows = [], isTeacher = false, busy = false;
 
   /* ---------- helpers ---------- */
   function weekdays(n){
@@ -301,9 +304,13 @@ const SUPABASE_KEY = "sb_publishable_0xfAtQ-XtWJWFW6A4irZBw_tKkaJMxN"; // anon(p
   const ordered = () => hasOrder() ? rows.filter(r=>r.slot!=null).sort((a,b)=>a.slot-b.slot) : null;
   function setMsg(id, text, kind){ const m=$(id); m.textContent=text||""; m.className="msg"+(kind?" "+kind:""); }
   function errText(error){
-    const m = (error && error.message) || "";
-    if(m.includes("wrong_pin")) return "선생님 비밀번호가 맞지 않아요.";
-    if(m.includes("wrong_code")) return "학번이 맞지 않아요. 내 번호의 학번 다섯 자리를 확인해 주세요.";
+    const code = (error && error.code) || "";
+    if(code === "auth/unauthorized-domain")
+      return "이 사이트 주소가 Firebase에 등록돼 있지 않아요. Authentication > Settings > 승인된 도메인에 추가해 주세요.";
+    if(code === "auth/popup-blocked") return "브라우저가 로그인 팝업을 막았어요. 팝업 차단을 해제한 뒤 다시 시도해 주세요.";
+    if(code === "auth/too-many-requests") return "너무 여러 번 시도했어요. 잠시 뒤 다시 시도해 주세요.";
+    if(code === "permission-denied")
+      return "선생님 계정으로 로그인했는지, 또는 학번(내 번호의 학번 다섯 자리)이 맞는지 확인해 주세요.";
     return "저장하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.";
   }
 
@@ -317,8 +324,8 @@ const SUPABASE_KEY = "sb_publishable_0xfAtQ-XtWJWFW6A4irZBw_tKkaJMxN"; // anon(p
 
   function renderDeck(){
     const o = ordered();
-    $("controls").hidden = !teacherPin || busy || !$("confirm").hidden;
-    $("lockNote").hidden = !!teacherPin;
+    $("controls").hidden = !isTeacher || busy || !$("confirm").hidden;
+    $("lockNote").hidden = !!isTeacher;
     $("drawBtn").textContent = o ? "다시 뽑기" : "순서 뽑기";
     if(busy) return;
     const n = rows.length || 27, dates = weekdays(n);
@@ -371,11 +378,11 @@ const SUPABASE_KEY = "sb_publishable_0xfAtQ-XtWJWFW6A4irZBw_tKkaJMxN"; // anon(p
     const eb = el("button","btn-sub btn-sm","노래 입력"); eb.type="button";
     eb.addEventListener("click",()=>openEdit(r));
     acts.append(eb);
-    if(teacherPin && o){
-      const db = el("button","btn-done btn-sm", r.done?"완료됨":"완료 체크"); db.type="button";
-      db.setAttribute("aria-pressed", r.done?"true":"false");
-      db.addEventListener("click",()=>toggleDone(r,db));
-      acts.append(db);
+    if(isTeacher && o){
+      const db2 = el("button","btn-done btn-sm", r.done?"완료됨":"완료 체크"); db2.type="button";
+      db2.setAttribute("aria-pressed", r.done?"true":"false");
+      db2.addEventListener("click",()=>toggleDone(r,db2));
+      acts.append(db2);
     }
     return acts;
   }
@@ -429,7 +436,7 @@ const SUPABASE_KEY = "sb_publishable_0xfAtQ-XtWJWFW6A4irZBw_tKkaJMxN"; // anon(p
   /* ---------- song edit ---------- */
   let editing = null;
   function openEdit(r){
-    if(!sb){ setMsg("deckMsg","Supabase 연결 설정이 필요해요.","err"); return; }
+    if(!db){ setMsg("deckMsg","Firebase 연결 설정이 필요해요.","err"); return; }
     editing = r;
     $("editTitle").textContent = `${r.student_no}번 · 노래 입력`;
     $("codeIn").value = ""; $("titleIn").value = r.song_title || ""; $("artistIn").value = r.artist || "";
@@ -445,45 +452,62 @@ const SUPABASE_KEY = "sb_publishable_0xfAtQ-XtWJWFW6A4irZBw_tKkaJMxN"; // anon(p
     if(!code){ setMsg("editMsg","학번을 입력해 주세요.","err"); return; }
     if(!title){ setMsg("editMsg","노래 제목을 입력해 주세요.","err"); return; }
     $("editSave").disabled = true; setMsg("editMsg","저장 중…");
-    const { error } = await sb.rpc("set_song",{ p_no:r.student_no, p_code:code, p_title:title, p_artist:artist });
-    $("editSave").disabled = false;
-    if(error){ setMsg("editMsg", errText(error), "err"); return; }
-    r.song_title = title; r.artist = artist || null;
-    $("editDlg").close(); render(false);
+    try{
+      await db.collection("students").doc(pad(r.student_no)).update({
+        song_title: title.slice(0,80),
+        artist: artist.slice(0,60),
+        code,
+        updated_at: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      $("editSave").disabled = false;
+      r.song_title = title; r.artist = artist;
+      $("editDlg").close(); render(false);
+    }catch(error){
+      $("editSave").disabled = false;
+      setMsg("editMsg", errText(error), "err");
+    }
   });
 
   /* ---------- teacher ---------- */
-  $("teacherBtn").addEventListener("click",()=>{
-    if(!sb){ setMsg("pinMsg","Supabase 연결 설정이 필요해요.","err"); return; }
-    $("teacherBtn").hidden=true; $("pinForm").hidden=false; $("pinInput").value=""; $("pinInput").focus();
-  });
-  $("pinCancel").addEventListener("click",()=>{ $("pinForm").hidden=true; $("teacherBtn").hidden=false; setMsg("pinMsg",""); });
-  $("pinForm").addEventListener("submit", async e=>{
-    e.preventDefault();
-    const pin = $("pinInput").value.trim(); if(!pin) return;
-    setMsg("pinMsg","확인 중…");
-    const { data, error } = await sb.rpc("verify_teacher",{ p_pin:pin });
-    if(error || !data){ setMsg("pinMsg", error?errText(error):"비밀번호가 맞지 않아요.","err"); return; }
-    teacherPin = pin; setMsg("pinMsg","");
-    $("pinForm").hidden=true; $("teacherOn").hidden=false;
-    render(false);
+  $("teacherBtn").addEventListener("click", async ()=>{
+    if(!db){ setMsg("pinMsg","Firebase 연결 설정이 필요해요.","err"); return; }
+    $("teacherBtn").disabled = true; setMsg("pinMsg","Google 로그인 창을 여는 중…");
+    try{
+      await firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
+      setMsg("pinMsg","");
+      // isTeacher와 teacherOn/teacherBtn 표시, render()는 onAuthStateChanged 콜백에서 처리됨
+    }catch(error){
+      if(error && error.code === "auth/popup-closed-by-user"){
+        setMsg("pinMsg","");
+      } else {
+        setMsg("pinMsg", errText(error), "err");
+      }
+    }
+    $("teacherBtn").disabled = false;
   });
   $("logoutBtn").addEventListener("click",()=>{
-    teacherPin=null; $("teacherOn").hidden=true; $("teacherBtn").hidden=false; $("confirm").hidden=true; render(false);
+    firebase.auth().signOut();
   });
 
   async function toggleDone(r, btn){
     btn.disabled=true;
     const next = !r.done;
-    const { error } = await sb.rpc("set_done",{ p_pin:teacherPin, p_no:r.student_no, p_done:next });
-    btn.disabled=false;
-    if(error){ setMsg("deckMsg", errText(error), "err"); return; }
-    r.done = next; render(false);
+    try{
+      await db.collection("students").doc(pad(r.student_no)).update({
+        done: next,
+        updated_at: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      btn.disabled=false;
+      r.done = next; render(false);
+    }catch(error){
+      btn.disabled=false;
+      setMsg("deckMsg", errText(error), "err");
+    }
   }
 
   /* ---------- draw ---------- */
   $("drawBtn").addEventListener("click",()=>{
-    if(!teacherPin) return;
+    if(!isTeacher) return;
     if(hasOrder()){ $("confirm").hidden=false; $("controls").hidden=true; $("yesBtn").focus(); }
     else runDraw();
   });
@@ -493,7 +517,7 @@ const SUPABASE_KEY = "sb_publishable_0xfAtQ-XtWJWFW6A4irZBw_tKkaJMxN"; // anon(p
   async function runDraw(){
     if(busy) return;
     busy=true; $("controls").hidden=true; setMsg("deckMsg","");
-    const n = rows.length || 27;
+    const n = rows.length || STUDENT_COUNT;
     $("labelTop").textContent="TRACK 01"; $("nowWho").textContent="두구두구두구…"; $("nowSong").textContent="";
     if(!reduce) $("record").classList.add("spin");
     const t0 = performance.now(), dur = reduce ? 300 : 2600;
@@ -504,12 +528,25 @@ const SUPABASE_KEY = "sb_publishable_0xfAtQ-XtWJWFW6A4irZBw_tKkaJMxN"; // anon(p
       const t = Math.min(1,(performance.now()-t0)/dur);
       setTimeout(flicker, 60 + Math.pow(t,3)*260);
     })();
-    const { error } = await sb.rpc("draw_order",{ p_pin:teacherPin });
-    if(!error) await load(false);
+    let drawError = null;
+    try{
+      const nos = rows.map(r=>r.student_no);
+      for(let i=nos.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [nos[i],nos[j]] = [nos[j],nos[i]];
+      }
+      const batch = db.batch();
+      const now = firebase.firestore.FieldValue.serverTimestamp();
+      nos.forEach((no, idx)=>{
+        batch.update(db.collection("students").doc(pad(no)), { slot: idx+1, done: false, updated_at: now });
+      });
+      await batch.commit();
+      await load(false);
+    }catch(error){ drawError = error; }
     const wait = Math.max(0, dur-(performance.now()-t0));
     await new Promise(res=>setTimeout(res,wait));
     stop=true; $("record").classList.remove("spin"); busy=false;
-    if(error){ setMsg("deckMsg", errText(error), "err"); render(false); return; }
+    if(drawError){ setMsg("deckMsg", errText(drawError), "err"); render(false); return; }
     render(true);
     const first = ordered()[0];
     $("labelTop").textContent="TRACK 01"; $("labelNum").textContent=first.student_no;
@@ -518,32 +555,67 @@ const SUPABASE_KEY = "sb_publishable_0xfAtQ-XtWJWFW6A4irZBw_tKkaJMxN"; // anon(p
   }
 
   /* ---------- data ---------- */
+  async function ensureSeeded(){
+    const snap = await db.collection("students").get();
+    const existing = new Set(snap.docs.map(d=>d.id));
+    const now = firebase.firestore.FieldValue.serverTimestamp();
+    const creates = [];
+    for(let no=1; no<=STUDENT_COUNT; no++){
+      const id = pad(no);
+      if(!existing.has(id)){
+        creates.push(
+          db.collection("students").doc(id).set({
+            student_no: no, slot: null, song_title: "", artist: "", done: false, updated_at: now,
+          }).catch(()=>{})
+        );
+      }
+    }
+    if(creates.length) await Promise.all(creates);
+  }
+
   async function load(doRender=true){
-    const { data, error } = await sb.from("students").select("student_no,slot,song_title,artist,done").order("student_no");
-    if(error){ showBanner("데이터를 불러오지 못했어요. Supabase 주소·키와 SQL 설정을 확인해 주세요."); return; }
-    $("banner").hidden=true;
-    rows = data || [];
+    try{
+      let snap = await db.collection("students").orderBy("student_no").get();
+      if(snap.size < STUDENT_COUNT){
+        await ensureSeeded();
+        snap = await db.collection("students").orderBy("student_no").get();
+      }
+      $("banner").hidden=true;
+      rows = snap.docs.map(d=>d.data());
+    }catch(error){
+      showBanner("데이터를 불러오지 못했어요. Firebase 설정과 Firestore 보안 규칙을 확인해 주세요.");
+      return;
+    }
     if(doRender && !busy) render(false);
   }
   let reloadTimer=null;
   function scheduleReload(){ clearTimeout(reloadTimer); reloadTimer=setTimeout(()=>{ if(!busy) load(); }, 400); }
   function showBanner(t){ $("banner").textContent=t; $("banner").hidden=false; }
 
-  if(!configured || !window.supabase){
-    rows = Array.from({length:27},(_,i)=>({student_no:i+1,slot:null,song_title:null,artist:null,done:false}));
+  if(!configured || !window.firebase){
+    rows = Array.from({length:27},(_,i)=>({student_no:i+1,slot:null,song_title:"",artist:"",done:false}));
     showBanner(!configured
-      ? "Supabase 연결 전이에요. 파일 아래쪽 SUPABASE_URL과 SUPABASE_KEY를 채워 주세요."
-      : "Supabase 라이브러리를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.");
+      ? "Firebase 연결 전이에요. 파일 위쪽 FIREBASE_CONFIG 값을 채워 주세요."
+      : "Firebase 라이브러리를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.");
     render(false);
     return;
   }
-  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  rows = Array.from({length:27},(_,i)=>({student_no:i+1,slot:null,song_title:null,artist:null,done:false}));
+
+  firebase.initializeApp(FIREBASE_CONFIG);
+  db = firebase.firestore();
+
+  firebase.auth().onAuthStateChanged(user=>{
+    isTeacher = !!user;
+    $("teacherOn").hidden = !isTeacher;
+    $("teacherBtn").hidden = isTeacher;
+    if(!isTeacher){ $("confirm").hidden = true; }
+    render(false);
+  });
+
+  rows = Array.from({length:27},(_,i)=>({student_no:i+1,slot:null,song_title:"",artist:"",done:false}));
   render(false);
   load();
-  sb.channel("students-live")
-    .on("postgres_changes",{event:"*",schema:"public",table:"students"}, scheduleReload)
-    .subscribe();
+  db.collection("students").onSnapshot(()=>{ if(!busy) scheduleReload(); }, ()=>{ /* 연결 오류는 다음 load()에서 배너로 표시됨 */ });
   setInterval(()=>{ if(!document.hidden) scheduleReload(); }, 60000);
   document.addEventListener("visibilitychange",()=>{ if(!document.hidden) scheduleReload(); });
 })();
