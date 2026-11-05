@@ -312,7 +312,17 @@ const FIREBASE_CONFIG = {
     if(code === "auth/too-many-requests") return "너무 여러 번 시도했어요. 잠시 뒤 다시 시도해 주세요.";
     if(code === "permission-denied")
       return "선생님 계정으로 로그인했는지, 또는 학번(내 번호의 학번 다섯 자리)이 맞는지 확인해 주세요.";
+    if(code === "timeout")
+      return "서버 응답이 오지 않아요. 와이파이 연결을 확인하고 다시 시도해 주세요.";
     return "저장하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.";
+  }
+  // 일부 네트워크에서 Firestore 요청이 응답 없이 멈추는 경우를 대비한 안전장치.
+  // ms 안에 끝나지 않으면 "timeout" 에러로 대신 실패 처리해서 화면이 영영 멈추지 않게 해요.
+  function withTimeout(promise, ms=15000){
+    return Promise.race([
+      promise,
+      new Promise((_,reject)=>setTimeout(()=>reject({code:"timeout"}), ms)),
+    ]);
   }
 
   /* ---------- render ---------- */
@@ -454,12 +464,12 @@ const FIREBASE_CONFIG = {
     if(!title){ setMsg("editMsg","노래 제목을 입력해 주세요.","err"); return; }
     $("editSave").disabled = true; setMsg("editMsg","저장 중…");
     try{
-      await db.collection("students").doc(pad(r.student_no)).update({
+      await withTimeout(db.collection("students").doc(pad(r.student_no)).update({
         song_title: title.slice(0,80),
         artist: artist.slice(0,60),
         code,
         updated_at: firebase.firestore.FieldValue.serverTimestamp(),
-      });
+      }));
       $("editSave").disabled = false;
       r.song_title = title; r.artist = artist;
       $("editDlg").close(); render(false);
@@ -494,10 +504,10 @@ const FIREBASE_CONFIG = {
     btn.disabled=true;
     const next = !r.done;
     try{
-      await db.collection("students").doc(pad(r.student_no)).update({
+      await withTimeout(db.collection("students").doc(pad(r.student_no)).update({
         done: next,
         updated_at: firebase.firestore.FieldValue.serverTimestamp(),
-      });
+      }));
       btn.disabled=false;
       r.done = next; render(false);
     }catch(error){
@@ -541,7 +551,7 @@ const FIREBASE_CONFIG = {
       nos.forEach((no, idx)=>{
         batch.update(db.collection("students").doc(pad(no)), { slot: idx+1, done: false, updated_at: now });
       });
-      await batch.commit();
+      await withTimeout(batch.commit());
       await load(false);
     }catch(error){ drawError = error; }
     const wait = Math.max(0, dur-(performance.now()-t0));
@@ -576,10 +586,10 @@ const FIREBASE_CONFIG = {
 
   async function load(doRender=true){
     try{
-      let snap = await db.collection("students").orderBy("student_no").get();
+      let snap = await withTimeout(db.collection("students").orderBy("student_no").get());
       if(snap.size < STUDENT_COUNT){
         await ensureSeeded();
-        snap = await db.collection("students").orderBy("student_no").get();
+        snap = await withTimeout(db.collection("students").orderBy("student_no").get());
       }
       $("banner").hidden=true;
       rows = snap.docs.map(d=>d.data());
@@ -604,6 +614,10 @@ const FIREBASE_CONFIG = {
 
   firebase.initializeApp(FIREBASE_CONFIG);
   db = firebase.firestore();
+  // 학교 와이파이 등 일부 네트워크에서 Firestore의 기본 실시간 연결 방식이
+  // 막혀서 쓰기/읽기가 응답 없이 멈추는 경우가 있어요. 더 호환성 좋은
+  // long-polling 방식을 자동 감지해서 쓰도록 설정합니다.
+  db.settings({ experimentalAutoDetectLongPolling: true });
 
   firebase.auth().onAuthStateChanged(user=>{
     isTeacher = !!user;
